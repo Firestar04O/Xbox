@@ -13,13 +13,17 @@ namespace BosqueCompartidoEditor
 {
     public static class ConfiguradorBosque
     {
-        private const string RutaEscena = "Assets/Scenes/SampleScene.unity";
+        private const string RutaEscena = "Assets/Scenes/Lab3.unity";
 
-        // Configura una sola vez el proyecto actual cuando Unity termina de compilar
-        // estos scripts. El guard evita volver a tocar escenas ya configuradas.
+        // Mantiene sincronizada la escena que se usara en Multiplayer Play Mode.
+        // Los NetworkObject colocados en escena deben existir en el archivo guardado
+        // antes de que Host y Cliente carguen sus respectivas copias.
         [InitializeOnLoadMethod]
         private static void ProgramarConfiguracionInicial()
         {
+            EditorApplication.playModeStateChanged -= AlCambiarEstadoPlay;
+            EditorApplication.playModeStateChanged += AlCambiarEstadoPlay;
+
             EditorApplication.delayCall += () =>
             {
                 if (EditorApplication.isPlayingOrWillChangePlaymode)
@@ -27,39 +31,81 @@ namespace BosqueCompartidoEditor
                     return;
                 }
 
-                Scene escenaActiva = SceneManager.GetActiveScene();
-                GameObject arbol = GameObject.Find("Arbol");
-
-                if (escenaActiva.path == RutaEscena &&
-                    arbol != null &&
-                    arbol.GetComponent<BosqueCompartido.ArbolCompartido>() == null)
-                {
-                    ConfigurarEscena();
-                }
+                PrepararEscenaActiva(true);
             };
+        }
+
+        private static void AlCambiarEstadoPlay(PlayModeStateChange estado)
+        {
+            // EnteredEditMode cubre el caso en que se copiaron arboles antes de
+            // detener una sesion. ExitingEditMode garantiza que todos los jugadores
+            // carguen exactamente la misma version guardada de la escena.
+            if (estado == PlayModeStateChange.EnteredEditMode ||
+                estado == PlayModeStateChange.ExitingEditMode)
+            {
+                PrepararEscenaActiva(true);
+            }
         }
 
         [MenuItem("Tools/Bosque compartido/Configurar escena")]
         public static void ConfigurarEscena()
         {
             Scene escena = EditorSceneManager.OpenScene(RutaEscena, OpenSceneMode.Single);
-
-            ConfigurarNetworkManager();
-            ConfigurarArbol();
-            AgregarEscenaAlBuild();
-
-            EditorSceneManager.MarkSceneDirty(escena);
-            EditorSceneManager.SaveScene(escena);
-            AssetDatabase.SaveAssets();
-            Debug.Log("Bosque compartido configurado correctamente.");
+            PrepararEscena(escena, true);
         }
 
-        private static void ConfigurarNetworkManager()
+        [MenuItem("Tools/Bosque compartido/Preparar y guardar todos los arboles")]
+        public static void PrepararYGuardarTodosLosArboles()
         {
-            GameObject objeto = GameObject.Find("NetworkManager");
+            if (!PrepararEscenaActiva(true))
+            {
+                Debug.LogWarning($"Abre la escena {RutaEscena} antes de preparar el bosque.");
+            }
+        }
+
+        private static bool PrepararEscenaActiva(bool guardar)
+        {
+            Scene escena = SceneManager.GetActiveScene();
+            if (!escena.IsValid() || escena.path != RutaEscena)
+            {
+                return false;
+            }
+
+            PrepararEscena(escena, guardar);
+            return true;
+        }
+
+        private static void PrepararEscena(Scene escena, bool guardar)
+        {
+            ConfigurarNetworkManager(escena);
+            int cantidadArboles = ConfigurarArboles(escena);
+            AgregarEscenaAlBuild();
+
+            if (cantidadArboles == 0)
+            {
+                Debug.LogWarning("No se encontro ningun GameObject llamado 'Arbol' o 'Arbol (n)'.");
+                return;
+            }
+
+            EditorSceneManager.MarkSceneDirty(escena);
+            if (guardar)
+            {
+                EditorSceneManager.SaveScene(escena);
+                AssetDatabase.SaveAssets();
+            }
+
+            Debug.Log($"Bosque compartido preparado: {cantidadArboles} arbol(es) guardados y listos para red.");
+        }
+
+        private static void ConfigurarNetworkManager(Scene escena)
+        {
+            GameObject objeto = escena.GetRootGameObjects()
+                .FirstOrDefault(go => go.name == "NetworkManager");
+
             if (objeto == null)
             {
                 objeto = new GameObject("NetworkManager");
+                SceneManager.MoveGameObjectToScene(objeto, escena);
             }
 
             UnityTransport transporte = objeto.GetComponent<UnityTransport>();
@@ -85,14 +131,31 @@ namespace BosqueCompartidoEditor
             EditorUtility.SetDirty(manager);
         }
 
-        private static void ConfigurarArbol()
+        private static int ConfigurarArboles(Scene escena)
         {
-            GameObject arbol = GameObject.Find("Arbol");
-            if (arbol == null)
+            GameObject[] arboles = escena.GetRootGameObjects()
+                .SelectMany(raiz => raiz.GetComponentsInChildren<Transform>(true))
+                .Select(transformacion => transformacion.gameObject)
+                .Where(EsArbol)
+                .OrderBy(arbol => arbol.name)
+                .ToArray();
+
+            foreach (GameObject arbol in arboles)
             {
-                throw new InvalidOperationException("No se encontro un GameObject llamado 'Arbol'.");
+                ConfigurarArbol(arbol);
             }
 
+            return arboles.Length;
+        }
+
+        private static bool EsArbol(GameObject objeto)
+        {
+            return objeto.name.Equals("Arbol", StringComparison.OrdinalIgnoreCase) ||
+                   objeto.name.StartsWith("Arbol (", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static void ConfigurarArbol(GameObject arbol)
+        {
             if (arbol.GetComponent<NetworkObject>() == null)
             {
                 arbol.AddComponent<NetworkObject>();

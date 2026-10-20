@@ -3,67 +3,120 @@ using UnityEngine;
 
 namespace BosqueCompartido
 {
+    public enum ModoInicioRed
+    {
+        Ninguno,
+        Host,
+        Cliente,
+        Servidor
+    }
+
+    [DisallowMultipleComponent]
     public sealed class InicioRedGUI : MonoBehaviour
     {
-        private const int AnchoPanel = 300;
-        private string nombreJugador = "Jugador 1";
+        [Header("Jugador local")]
+        [SerializeField] private string nombreJugador = "Jugador 1";
+
+        [Header("Inicio opcional")]
+        [SerializeField] private bool iniciarAutomaticamente;
+        [SerializeField] private ModoInicioRed modoInicio = ModoInicioRed.Ninguno;
 
         public static string NombreJugadorLocal { get; private set; } = "Jugador 1";
 
-        private void OnGUI()
+        public string EstadoActual
+        {
+            get
+            {
+                NetworkManager red = NetworkManager.Singleton;
+                if (red == null || !red.IsListening)
+                {
+                    return "Desconectado";
+                }
+
+                return red.IsHost ? "Host" : red.IsServer ? "Servidor" : "Cliente";
+            }
+        }
+
+        private void Awake()
+        {
+            ActualizarNombreLocal();
+        }
+
+        private void Start()
+        {
+            if (!iniciarAutomaticamente)
+            {
+                return;
+            }
+
+            switch (modoInicio)
+            {
+                case ModoInicioRed.Host:
+                    IniciarHost();
+                    break;
+                case ModoInicioRed.Cliente:
+                    IniciarCliente();
+                    break;
+                case ModoInicioRed.Servidor:
+                    IniciarServidor();
+                    break;
+            }
+        }
+
+        private void OnValidate()
+        {
+            if (string.IsNullOrWhiteSpace(nombreJugador))
+            {
+                nombreJugador = "Jugador";
+            }
+        }
+
+        public void IniciarHost()
+        {
+            ActualizarNombreLocal();
+            Iniciar(red => red.StartHost());
+        }
+
+        public void IniciarCliente()
+        {
+            ActualizarNombreLocal();
+            Iniciar(red => red.StartClient());
+        }
+
+        public void IniciarServidor()
+        {
+            Iniciar(red => red.StartServer());
+        }
+
+        public void Desconectar()
+        {
+            NetworkManager red = NetworkManager.Singleton;
+            if (red != null && red.IsListening)
+            {
+                red.Shutdown();
+            }
+        }
+
+        private void ActualizarNombreLocal()
+        {
+            NombreJugadorLocal = string.IsNullOrWhiteSpace(nombreJugador)
+                ? "Jugador"
+                : nombreJugador.Trim();
+        }
+
+        private static void Iniciar(System.Func<NetworkManager, bool> accion)
         {
             NetworkManager red = NetworkManager.Singleton;
             if (red == null)
             {
-                GUI.Box(new Rect(12, 12, AnchoPanel, 55), "No se encontro NetworkManager.");
+                Debug.LogError("No se encontro NetworkManager en la escena.");
                 return;
             }
 
-            GUILayout.BeginArea(new Rect(12, 12, AnchoPanel, 220), GUI.skin.box);
-            GUILayout.Label("Bosque compartido");
-
-            if (!red.IsListening)
+            if (!red.IsListening && !accion(red))
             {
-                GUILayout.Label("Nombre (max. 29 bytes UTF-8):");
-                nombreJugador = GUILayout.TextField(nombreJugador, 29);
-                NombreJugadorLocal = string.IsNullOrWhiteSpace(nombreJugador)
-                    ? "Jugador"
-                    : nombreJugador.Trim();
-
-                GUILayout.Space(6);
-                GUILayout.BeginHorizontal();
-
-                if (GUILayout.Button("Host"))
-                {
-                    red.StartHost();
-                }
-
-                if (GUILayout.Button("Cliente"))
-                {
-                    red.StartClient();
-                }
-
-                if (GUILayout.Button("Servidor"))
-                {
-                    red.StartServer();
-                }
-
-                GUILayout.EndHorizontal();
+                Debug.LogError("No se pudo iniciar la sesion de red.");
             }
-            else
-            {
-                string modo = red.IsHost ? "Host" : red.IsServer ? "Servidor" : "Cliente";
-                GUILayout.Label($"Conectado como: {modo}");
-                GUILayout.Label($"ID local: {red.LocalClientId}");
-                GUILayout.Label("Haz clic sobre el arbol para reclamarlo.");
-
-                if (GUILayout.Button("Desconectar"))
-                {
-                    red.Shutdown();
-                }
-            }
-
-            GUILayout.EndArea();
         }
     }
 }
