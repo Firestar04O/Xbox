@@ -1,4 +1,5 @@
 using System.Linq;
+using System.IO;
 using BosqueCompartido;
 using TMPro;
 using Unity.Netcode;
@@ -18,6 +19,8 @@ namespace BosqueCompartidoEditor
         private const string CarpetaMateriales = "Assets/Materials/Lab5";
         private const string RutaJugador = CarpetaPrefabs + "/JugadorLab5.prefab";
         private const string RutaCubo = CarpetaPrefabs + "/CuboAgarrableLab5.prefab";
+        private const string RutaJugadorPreferida = CarpetaPrefabs + "/Player.prefab";
+        private const string RutaCuboPreferida = CarpetaPrefabs + "/Cubito.prefab";
         private const string RutaListaPrefabs = "Assets/DefaultNetworkPrefabs.asset";
 
         [InitializeOnLoadMethod]
@@ -46,7 +49,7 @@ namespace BosqueCompartidoEditor
         public static void PrepararDesdeMenu()
         {
             Scene escena = SceneManager.GetActiveScene();
-            if (escena.path != RutaEscena)
+            if (!EsEscenaLab5(escena))
             {
                 escena = EditorSceneManager.OpenScene(RutaEscena, OpenSceneMode.Single);
             }
@@ -57,6 +60,15 @@ namespace BosqueCompartidoEditor
         private static void PrepararEnSegundoPlano()
         {
             Scene activa = SceneManager.GetActiveScene();
+
+            // También acepta copias como "Lab5 1". Esto evita modificar otra
+            // escena distinta de la que el usuario está editando.
+            if (EsEscenaLab5(activa))
+            {
+                PrepararEscena(activa, true);
+                return;
+            }
+
             Scene escena = SceneManager.GetSceneByPath(RutaEscena);
             bool cerrarAlTerminar = !escena.IsValid() || !escena.isLoaded;
 
@@ -76,6 +88,17 @@ namespace BosqueCompartidoEditor
             {
                 SceneManager.SetActiveScene(activa);
             }
+        }
+
+        private static bool EsEscenaLab5(Scene escena)
+        {
+            if (!escena.IsValid() || string.IsNullOrEmpty(escena.path))
+            {
+                return false;
+            }
+
+            string nombre = Path.GetFileNameWithoutExtension(escena.path);
+            return nombre.StartsWith("Lab5", System.StringComparison.OrdinalIgnoreCase);
         }
 
         private static void PrepararEscena(Scene escena, bool guardar)
@@ -117,7 +140,8 @@ namespace BosqueCompartidoEditor
 
         private static GameObject CrearPrefabJugador(Material material)
         {
-            GameObject existente = AssetDatabase.LoadAssetAtPath<GameObject>(RutaJugador);
+            GameObject existente = AssetDatabase.LoadAssetAtPath<GameObject>(RutaJugadorPreferida) ??
+                                  AssetDatabase.LoadAssetAtPath<GameObject>(RutaJugador);
             if (existente != null)
             {
                 return existente;
@@ -171,7 +195,8 @@ namespace BosqueCompartidoEditor
 
         private static GameObject CrearPrefabCubo(Material material)
         {
-            GameObject existente = AssetDatabase.LoadAssetAtPath<GameObject>(RutaCubo);
+            GameObject existente = AssetDatabase.LoadAssetAtPath<GameObject>(RutaCuboPreferida) ??
+                                  AssetDatabase.LoadAssetAtPath<GameObject>(RutaCubo);
             if (existente != null)
             {
                 return existente;
@@ -271,39 +296,84 @@ namespace BosqueCompartidoEditor
             Material materialSuelo,
             Material materialCofre)
         {
-            GameObject entorno = escena.GetRootGameObjects()
-                .FirstOrDefault(go => go.name == "Lab5_Entorno");
-            if (entorno == null)
+            GameObject[] plataformas = escena.GetRootGameObjects()
+                .SelectMany(raiz => raiz.GetComponentsInChildren<MeshRenderer>(true))
+                .Where(renderer =>
+                    renderer.sharedMaterial == materialSuelo ||
+                    EsPlataformaGrande(renderer.transform))
+                .Select(renderer => renderer.gameObject)
+                .Distinct()
+                .ToArray();
+
+            GameObject suelo = plataformas
+                .OrderBy(objeto => objeto.transform.root.name == "Ground" ? 0 : 1)
+                .FirstOrDefault();
+
+            if (suelo == null)
             {
-                entorno = new GameObject("Lab5_Entorno");
-                SceneManager.MoveGameObjectToScene(entorno, escena);
+                suelo = GameObject.CreatePrimitive(PrimitiveType.Cube);
+                SceneManager.MoveGameObjectToScene(suelo, escena);
             }
 
-            Transform plataforma = entorno.transform.Find("Plataforma Lab5");
-            if (plataforma == null)
+            suelo.transform.SetParent(null, true);
+            suelo.name = "Ground";
+            suelo.transform.SetPositionAndRotation(new Vector3(0f, -0.35f, 0f), Quaternion.identity);
+            suelo.transform.localScale = new Vector3(24f, 0.7f, 18f);
+            suelo.GetComponent<MeshRenderer>().sharedMaterial = materialSuelo;
+
+            foreach (GameObject duplicado in plataformas)
             {
-                GameObject suelo = GameObject.CreatePrimitive(PrimitiveType.Cube);
-                suelo.name = "Plataforma Lab5";
-                suelo.transform.SetParent(entorno.transform);
-                suelo.transform.SetPositionAndRotation(new Vector3(0f, -0.35f, 0f), Quaternion.identity);
-                suelo.transform.localScale = new Vector3(24f, 0.7f, 18f);
-                suelo.GetComponent<Renderer>().sharedMaterial = materialSuelo;
+                if (duplicado != suelo)
+                {
+                    Object.DestroyImmediate(duplicado, true);
+                }
             }
 
-            GameObject cofreObjeto = escena.GetRootGameObjects()
-                .FirstOrDefault(go => go.name == "Cofre Lab5");
-            if (cofreObjeto == null)
+            // Retira los contenedores vacíos de versiones anteriores. El suelo
+            // queda como un único objeto raíz llamado simplemente Ground.
+            foreach (GameObject raiz in escena.GetRootGameObjects().ToArray())
             {
-                cofreObjeto = CrearCofre(escena, materialCofre);
+                if (raiz != suelo &&
+                    (raiz.name == "Lab5_Entorno" || raiz.name == "Ground") &&
+                    raiz.transform.childCount == 0 &&
+                    raiz.GetComponents<Component>().Length == 1)
+                {
+                    Object.DestroyImmediate(raiz, true);
+                }
             }
 
-            CofreLab5 cofre = cofreObjeto.GetComponent<CofreLab5>();
+            CofreLab5[] cofres = escena.GetRootGameObjects()
+                .SelectMany(raiz => raiz.GetComponentsInChildren<CofreLab5>(true))
+                .ToArray();
+            CofreLab5 cofre = cofres
+                .OrderBy(comportamiento => comportamiento.name == "Cofre" ? 0 : 1)
+                .FirstOrDefault();
+
+            if (cofre == null)
+            {
+                cofre = CrearCofre(escena, materialCofre).GetComponent<CofreLab5>();
+            }
+
+            foreach (CofreLab5 duplicado in cofres)
+            {
+                if (duplicado != cofre)
+                {
+                    Object.DestroyImmediate(duplicado.gameObject, true);
+                }
+            }
+
+            GameObject cofreObjeto = cofre.gameObject;
+            cofreObjeto.name = "Cofre";
             SerializedObject serializado = new(cofre);
             serializado.FindProperty("cuboPrefab").objectReferenceValue = prefabCubo;
             serializado.FindProperty("duracionApertura").floatValue = 3f;
             serializado.FindProperty("distanciaMaxima").floatValue = 3.5f;
-            serializado.FindProperty("bisagraTapa").objectReferenceValue =
-                cofreObjeto.transform.Find("BisagraTapa");
+            Transform bisagra = cofreObjeto.transform.Find("Bisagra") ??
+                                cofreObjeto.transform.Find("BisagraTapa");
+            if (bisagra != null)
+            {
+                serializado.FindProperty("bisagraTapa").objectReferenceValue = bisagra;
+            }
             serializado.FindProperty("textoEstado").objectReferenceValue =
                 cofreObjeto.GetComponentInChildren<TMP_Text>(true);
             serializado.ApplyModifiedPropertiesWithoutUndo();
@@ -311,9 +381,17 @@ namespace BosqueCompartidoEditor
             EditorUtility.SetDirty(cofre);
         }
 
+        private static bool EsPlataformaGrande(Transform transformacion)
+        {
+            Vector3 escala = transformacion.localScale;
+            return Mathf.Abs(escala.x - 24f) < 0.01f &&
+                   Mathf.Abs(escala.y - 0.7f) < 0.01f &&
+                   Mathf.Abs(escala.z - 18f) < 0.01f;
+        }
+
         private static GameObject CrearCofre(Scene escena, Material material)
         {
-            GameObject cofre = new("Cofre Lab5");
+            GameObject cofre = new("Cofre");
             SceneManager.MoveGameObjectToScene(cofre, escena);
             cofre.transform.position = new Vector3(0f, 0f, 4f);
             cofre.AddComponent<NetworkObject>();
