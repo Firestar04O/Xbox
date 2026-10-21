@@ -869,6 +869,9 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::BosqueCompartido.InicioRedGUI
   nombreJugador: Jugador 1
+  mostrarInterfaz: 1
+  direccionServidor: 127.0.0.1
+  puerto: 7777
   iniciarAutomaticamente: 0
   modoInicio: 0
 --- !u!1 &1557386831

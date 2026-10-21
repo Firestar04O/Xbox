@@ -13,6 +13,10 @@ namespace BosqueCompartidoEditor
 
             EditorGUILayout.PropertyField(serializedObject.FindProperty("nombreJugador"));
             EditorGUILayout.Space();
+            EditorGUILayout.PropertyField(serializedObject.FindProperty("mostrarInterfaz"));
+            EditorGUILayout.PropertyField(serializedObject.FindProperty("direccionServidor"));
+            EditorGUILayout.PropertyField(serializedObject.FindProperty("puerto"));
+            EditorGUILayout.Space();
             EditorGUILayout.PropertyField(serializedObject.FindProperty("iniciarAutomaticamente"));
             EditorGUILayout.PropertyField(serializedObject.FindProperty("modoInicio"));
 
@@ -20,7 +24,7 @@ namespace BosqueCompartidoEditor
 
             EditorGUILayout.Space();
             EditorGUILayout.HelpBox(
-                "Esta configuracion no dibuja ningun Canvas ni interfaz durante el juego.",
+                "Durante el juego aparece un panel para iniciar Host, Cliente o Servidor y regresar al menu.",
                 MessageType.Info);
 
             if (!Application.isPlaying)
