@@ -13,6 +13,7 @@ namespace BosqueCompartido
         public void AbrirLab4() => Cargar("Lab4");
         public void AbrirLab5() => Cargar("Lab5");
         public void AbrirLab6() => Cargar("Lab6");
+        public void AbrirLab7() => Cargar("Lab7");
 
         public void Salir()
         {

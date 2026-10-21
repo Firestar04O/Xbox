@@ -20,6 +20,9 @@ EditorBuildSettings:
   - enabled: 1
     path: Assets/Scenes/Lab6.unity
     guid: 6c9c3b5d2e3b69545b2edff015f42905
+  - enabled: 1
+    path: Assets/Scenes/Lab7.unity
+    guid: b6fd640417533094aa1fec2294cc8215
   m_configObjects:
     com.unity.input.settings.actions: {fileID: -944628639613478452, guid: 052faaac586de48259a63d0c4782560b, type: 3}
   m_UseUCBPForAssetBundles: 0
